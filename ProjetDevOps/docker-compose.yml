@@ -51,7 +51,8 @@ services:
     build: ./target-test
     container_name: target-test
     networks:
-      - monitor_net
+      monitor_net:
+        ipv4_address: 172.29.0.3
     restart: always
 
   # ==========================================
@@ -101,6 +102,9 @@ networks:
     internal: true
   monitor_net:
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.29.0.0/16
   webhook_net:
     driver: bridge
   api_net:
