@@ -5,9 +5,9 @@ et l'automation de workflows via n8n, ainsi que la visualisation de données ave
 
 ---
 Groupe composé de : 
-- Jacky Lefevbre
-- Justine Rotge
-- Nicolas Veysset
+- Jacky Lefevbre : Zabbix
+- Justine Rotge : Grafana
+- Nicolas Veysset : N8N
 
 ## Architecture du Projet
 
