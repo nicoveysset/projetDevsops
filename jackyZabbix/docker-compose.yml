@@ -53,6 +53,14 @@ services:
       - zabbix-server
     restart: always
 
+  target-test:
+    image: ubuntu:latest
+    container_name: target-test
+    command: sleep infinity
+    networks:
+      - monitor_net
+    restart: always
+
 volumes:
   pgdata:
 
