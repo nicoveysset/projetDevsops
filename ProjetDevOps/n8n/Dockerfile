@@ -1,0 +1,8 @@
+FROM docker.io/n8nio/n8n:latest
+
+ENV N8N_PORT=5678
+ENV N8N_PROTOCOL=http
+ENV N8N_SECURE_COOKIE=false
+ENV NODE_ENV=production
+
+EXPOSE 5678

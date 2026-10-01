@@ -1,0 +1,109 @@
+version: '3.8'
+
+services:
+  # ==========================================
+  # 1. SOCLE ZABBIX & BDD
+  # ==========================================
+  zabbix-db:
+    image: postgres:15-alpine
+    container_name: zabbix-db
+    environment:
+      - POSTGRES_DB=zabbix
+      - POSTGRES_USER=zabbix
+      - POSTGRES_PASSWORD=zabbix_password
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - db_net
+    restart: always
+
+  zabbix-server:
+    build: ./zabbix-server
+    container_name: zabbix-server
+    ports:
+      - "10051:10051"
+    networks:
+      - db_net
+      - monitor_net
+      - webhook_net
+    depends_on:
+      - zabbix-db
+    restart: always
+
+  zabbix-web:
+    build: ./zabbix-web
+    container_name: zabbix-web
+    ports:
+      - "8080:8080"
+    networks:
+      - db_net
+      - api_net
+      - frontend_net
+    depends_on:
+      - zabbix-db
+      - zabbix-server
+    restart: always
+
+  # ==========================================
+  # 2. CIBLE DE TEST (UBUNTU)
+  # ==========================================
+  target-test:
+    build: ./target-test
+    container_name: target-test
+    networks:
+      - monitor_net
+    restart: always
+
+  # ==========================================
+  # 3. AUTOMATISATION (N8N)
+  # ==========================================
+  n8n:
+    build: ./n8n
+    container_name: oc_n8n
+    ports:
+      - "5678:5678"
+    environment:
+      - WEBHOOK_URL=http://n8n:5678/
+      - N8N_EDITOR_BASE_URL=http://68.210.100.220:5678/
+    volumes:
+      - n8n_data:/home/node/.n8n
+    networks:
+      - webhook_net
+      - frontend_net
+    restart: unless-stopped
+
+  # ==========================================
+  # 4. VISUALISATION (GRAFANA)
+  # ==========================================
+  grafana:
+    build: ./grafana
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+    networks:
+      - api_net
+      - frontend_net
+    restart: always
+
+# ==========================================
+# VOLUMES ET RÉSEAUX
+# ==========================================
+volumes:
+  pgdata:
+  n8n_data:
+  grafana_data:
+
+networks:
+  db_net:
+    driver: bridge
+    internal: true
+  monitor_net:
+    driver: bridge
+  webhook_net:
+    driver: bridge
+  api_net:
+    driver: bridge
+  frontend_net:
+    driver: bridge
