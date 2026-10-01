@@ -1,0 +1,20 @@
+services:
+  grafana:
+    build: .
+    container_name: grafana
+    networks:
+      - frontend_net
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+    restart: always
+    environment:
+      - GF_INSTALL_PLUGINS=alexanderzobnin-zabbix-app
+
+networks:
+  frontend_net:
+    external: true   # si le réseau existe déjà
+
+volumes:
+  grafana_data:
