@@ -1,4 +1,4 @@
-# Projet DevOpsn
+# Projet DevOps
 
 Ce projet met en place une stack d'infrastructure conteneurisée avec Docker Compose. Elle combine la supervision système avec Zabbix, la gestion des alertes
 et l'automation de workflows via n8n, ainsi que la visualisation de données avec Grafana.
