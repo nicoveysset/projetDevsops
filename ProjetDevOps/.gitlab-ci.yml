@@ -1,0 +1,41 @@
+stages:
+  - validate
+  - build
+
+variables:
+  DOCKER_TLS_CERTDIR: "/certs"
+  PROJECT_DIR: "ProjetDevOps"
+  COMPOSE_FILE: "ProjetDevOps/docker-compose.yml"
+  IMAGE_TAG: "${CI_COMMIT_REF_SLUG}-${CI_COMMIT_SHORT_SHA}"
+
+validate_compose:
+  stage: validate
+  image: docker:24.0
+  services:
+    - docker:24.0-dind
+  script:
+    - docker compose -f "$COMPOSE_FILE" config
+    - docker compose -f "$COMPOSE_FILE" config --services
+
+build_and_push_images:
+  stage: build
+  image: docker:24.0
+  services:
+    - docker:24.0-dind
+  before_script:
+    - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
+  script:
+    - for svc in zabbix-server zabbix-web n8n grafana target-test; do
+        IMAGE="$CI_REGISTRY_IMAGE/$svc";
+        echo "==> Building $svc";
+        docker build -t "$IMAGE:$IMAGE_TAG" "$PROJECT_DIR/$svc";
+        docker push "$IMAGE:$IMAGE_TAG";
+        if [ "$CI_COMMIT_BRANCH" = "$CI_DEFAULT_BRANCH" ]; then
+          docker tag "$IMAGE:$IMAGE_TAG" "$IMAGE:latest";
+          docker push "$IMAGE:latest";
+        fi;
+      done
+  only:
+    - main
+    - master
+    - tags
