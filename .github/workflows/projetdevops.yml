@@ -20,7 +20,8 @@ jobs:
 
   build-and-push:
     name: Build and publish ${{ matrix.service }}
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    needs: validate-compose
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -58,7 +59,7 @@ jobs:
         with:
           images: ${{ steps.image.outputs.name }}
           tags: |
-            type=sha,format=long
+            type=sha,format=long,prefix=sha-
             type=ref,event=branch
             type=ref,event=tag
             type=raw,value=latest,enable={{is_default_branch}}
@@ -70,3 +71,22 @@ jobs:
           push: true
           tags: ${{ steps.metadata.outputs.tags }}
           labels: ${{ steps.metadata.outputs.labels }}
+
+  deploy-to-azure-vm:
+    name: Deploy to Azure VM
+    if: github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && vars.AZURE_DEPLOY_ENABLED == 'true'
+    environment: production
+    needs:
+      - validate-compose
+      - build-and-push
+    runs-on: [self-hosted, linux, azure-projetdevops]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Pull images and deploy Compose stack
+        run: |
+          IMAGE_NAMESPACE="${GITHUB_REPOSITORY,,}"
+          IMAGE_TAG="sha-${GITHUB_SHA}"
+          GHCR_NAMESPACE="$IMAGE_NAMESPACE" IMAGE_TAG="$IMAGE_TAG" docker compose -f ProjetDevOps/docker-compose.yml pull
+          GHCR_NAMESPACE="$IMAGE_NAMESPACE" IMAGE_TAG="$IMAGE_TAG" docker compose -f ProjetDevOps/docker-compose.yml up -d --no-build --remove-orphans
