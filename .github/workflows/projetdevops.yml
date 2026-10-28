@@ -142,7 +142,7 @@ jobs:
           printf '%s\n' "$AZURE_VM_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
 
-      - name: Copy project and start containers
+      - name: Copy Compose file and start containers
         env:
           AZURE_VM_HOST: ${{ secrets.AZURE_VM_HOST }}
           AZURE_VM_USER: ${{ secrets.AZURE_VM_USER }}
@@ -153,7 +153,7 @@ jobs:
 
           ssh_opts=(-i "$HOME/.ssh/id_ed25519" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes)
           ssh "${ssh_opts[@]}" "$AZURE_VM_USER@$AZURE_VM_HOST" 'mkdir -p ~/ProjetDevOps'
-          scp -r "${ssh_opts[@]}" ProjetDevOps "$AZURE_VM_USER@$AZURE_VM_HOST:~/"
+          scp "${ssh_opts[@]}" ProjetDevOps/docker-compose.yml "$AZURE_VM_USER@$AZURE_VM_HOST:~/ProjetDevOps/docker-compose.yml"
 
           image_namespace="${GITHUB_REPOSITORY,,}"
           image_tag="sha-${GITHUB_SHA}"
