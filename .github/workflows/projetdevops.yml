@@ -2,7 +2,8 @@ name: ProjetDevOps Docker CI/CD
 
 on:
   push:
-  pull_request:
+    branches:
+      - workflow
 
 permissions:
   contents: read
@@ -20,7 +21,6 @@ jobs:
 
   build-and-push:
     name: Build and publish ${{ matrix.service }}
-    if: github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
     needs: validate-compose
     runs-on: ubuntu-latest
     permissions:
@@ -61,7 +61,6 @@ jobs:
           tags: |
             type=sha,format=long,prefix=sha-
             type=ref,event=branch
-            type=ref,event=tag
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push image
@@ -72,9 +71,53 @@ jobs:
           tags: ${{ steps.metadata.outputs.tags }}
           labels: ${{ steps.metadata.outputs.labels }}
 
+  create-release:
+    name: Create GitHub release
+    needs:
+      - build-and-push
+      - deploy-to-azure-vm
+    if: github.ref == 'refs/heads/workflow' && always() && needs.build-and-push.result == 'success' && (needs.deploy-to-azure-vm.result == 'success' || needs.deploy-to-azure-vm.result == 'skipped')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - name: Prepare Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create next release and tag images
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 10); do
+            latest="$(gh release list --repo "$GITHUB_REPOSITORY" --limit 1000 --json tagName --jq '[.[] | .tagName | select(test("^V[0-9]+$")) | ltrimstr("V") | tonumber] | max // 0')"
+            release_version="V$((latest + 1))"
+            if gh release create "$release_version" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "$release_version" --generate-notes; then
+              break
+            fi
+            if [ "$(gh release view "$release_version" --repo "$GITHUB_REPOSITORY" --json targetCommitish --jq .targetCommitish 2>/dev/null || true)" = "$GITHUB_SHA" ]; then
+              break
+            fi
+            [ "$attempt" -lt 10 ] || exit 1
+            sleep "$attempt"
+          done
+          image_namespace="${GITHUB_REPOSITORY,,}"
+          for service in zabbix-server zabbix-web n8n grafana target-test; do
+            image="ghcr.io/$image_namespace/$service"
+            docker buildx imagetools create --tag "$image:$release_version" "$image:sha-$GITHUB_SHA"
+          done
+
   deploy-to-azure-vm:
     name: Deploy to Azure VM
-    if: github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && vars.AZURE_DEPLOY_ENABLED == 'true'
+    if: github.ref == 'refs/heads/workflow' && vars.AZURE_DEPLOY_ENABLED == 'true'
     environment: production
     needs:
       - validate-compose
