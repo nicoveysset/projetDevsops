@@ -122,14 +122,34 @@ jobs:
     needs:
       - validate-compose
       - build-and-push
-    runs-on: [self-hosted, linux, azure-projetdevops]
+    runs-on: ubuntu-latest
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Pull images and deploy Compose stack
+      - name: Configure SSH
+        env:
+          AZURE_VM_SSH_KEY: ${{ secrets.AZURE_VM_SSH_KEY }}
+          AZURE_VM_KNOWN_HOSTS: ${{ secrets.AZURE_VM_KNOWN_HOSTS }}
         run: |
+          test -n "$AZURE_VM_SSH_KEY" || { echo "Missing AZURE_VM_SSH_KEY"; exit 1; }
+          test -n "$AZURE_VM_KNOWN_HOSTS" || { echo "Missing AZURE_VM_KNOWN_HOSTS"; exit 1; }
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$AZURE_VM_SSH_KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$AZURE_VM_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+
+      - name: Copy Compose file and deploy
+        env:
+          AZURE_VM_HOST: ${{ secrets.AZURE_VM_HOST }}
+          AZURE_VM_USER: ${{ secrets.AZURE_VM_USER }}
+        run: |
+          test -n "$AZURE_VM_HOST" || { echo "Missing AZURE_VM_HOST"; exit 1; }
+          test -n "$AZURE_VM_USER" || { echo "Missing AZURE_VM_USER"; exit 1; }
           IMAGE_NAMESPACE="${GITHUB_REPOSITORY,,}"
           IMAGE_TAG="sha-${GITHUB_SHA}"
-          GHCR_NAMESPACE="$IMAGE_NAMESPACE" IMAGE_TAG="$IMAGE_TAG" docker compose -f ProjetDevOps/docker-compose.yml pull
-          GHCR_NAMESPACE="$IMAGE_NAMESPACE" IMAGE_TAG="$IMAGE_TAG" docker compose -f ProjetDevOps/docker-compose.yml up -d --no-build --remove-orphans
+          SSH_OPTS="-i ~/.ssh/id_ed25519 -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes"
+          ssh $SSH_OPTS "$AZURE_VM_USER@$AZURE_VM_HOST" 'mkdir -p ~/projetdevops'
+          scp $SSH_OPTS ProjetDevOps/docker-compose.yml "$AZURE_VM_USER@$AZURE_VM_HOST:projetdevops/docker-compose.yml"
+          ssh $SSH_OPTS "$AZURE_VM_USER@$AZURE_VM_HOST" \
+            "cd ~/projetdevops && GHCR_NAMESPACE='$IMAGE_NAMESPACE' IMAGE_TAG='$IMAGE_TAG' docker compose -f docker-compose.yml pull && GHCR_NAMESPACE='$IMAGE_NAMESPACE' IMAGE_TAG='$IMAGE_TAG' docker compose -f docker-compose.yml up -d --no-build --remove-orphans"
