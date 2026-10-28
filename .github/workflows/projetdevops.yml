@@ -116,13 +116,15 @@ jobs:
           done
 
   deploy-to-azure-vm:
-    name: Deploy to Azure VM
+    name: Deploy to Azure VM over SSH
     if: github.ref == 'refs/heads/workflow' && vars.AZURE_DEPLOY_ENABLED == 'true'
     environment: production
     needs:
       - validate-compose
       - build-and-push
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -132,24 +134,28 @@ jobs:
           AZURE_VM_SSH_KEY: ${{ secrets.AZURE_VM_SSH_KEY }}
           AZURE_VM_KNOWN_HOSTS: ${{ secrets.AZURE_VM_KNOWN_HOSTS }}
         run: |
-          test -n "$AZURE_VM_SSH_KEY" || { echo "Missing AZURE_VM_SSH_KEY"; exit 1; }
-          test -n "$AZURE_VM_KNOWN_HOSTS" || { echo "Missing AZURE_VM_KNOWN_HOSTS"; exit 1; }
+          set -euo pipefail
+          test -n "$AZURE_VM_SSH_KEY" || { echo "Missing AZURE_VM_SSH_KEY secret"; exit 1; }
+          test -n "$AZURE_VM_KNOWN_HOSTS" || { echo "Missing AZURE_VM_KNOWN_HOSTS secret"; exit 1; }
           install -m 700 -d ~/.ssh
           printf '%s\n' "$AZURE_VM_SSH_KEY" > ~/.ssh/id_ed25519
           printf '%s\n' "$AZURE_VM_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
 
-      - name: Copy Compose file and deploy
+      - name: Copy project and start containers
         env:
           AZURE_VM_HOST: ${{ secrets.AZURE_VM_HOST }}
           AZURE_VM_USER: ${{ secrets.AZURE_VM_USER }}
         run: |
-          test -n "$AZURE_VM_HOST" || { echo "Missing AZURE_VM_HOST"; exit 1; }
-          test -n "$AZURE_VM_USER" || { echo "Missing AZURE_VM_USER"; exit 1; }
-          IMAGE_NAMESPACE="${GITHUB_REPOSITORY,,}"
-          IMAGE_TAG="sha-${GITHUB_SHA}"
-          SSH_OPTS="-i ~/.ssh/id_ed25519 -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes"
-          ssh $SSH_OPTS "$AZURE_VM_USER@$AZURE_VM_HOST" 'mkdir -p ~/projetdevops'
-          scp $SSH_OPTS ProjetDevOps/docker-compose.yml "$AZURE_VM_USER@$AZURE_VM_HOST:projetdevops/docker-compose.yml"
-          ssh $SSH_OPTS "$AZURE_VM_USER@$AZURE_VM_HOST" \
-            "cd ~/projetdevops && GHCR_NAMESPACE='$IMAGE_NAMESPACE' IMAGE_TAG='$IMAGE_TAG' docker compose -f docker-compose.yml pull && GHCR_NAMESPACE='$IMAGE_NAMESPACE' IMAGE_TAG='$IMAGE_TAG' docker compose -f docker-compose.yml up -d --no-build --remove-orphans"
+          set -euo pipefail
+          test -n "$AZURE_VM_HOST" || { echo "Missing AZURE_VM_HOST secret"; exit 1; }
+          test -n "$AZURE_VM_USER" || { echo "Missing AZURE_VM_USER secret"; exit 1; }
+
+          ssh_opts=(-i "$HOME/.ssh/id_ed25519" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes)
+          ssh "${ssh_opts[@]}" "$AZURE_VM_USER@$AZURE_VM_HOST" 'mkdir -p ~/ProjetDevOps'
+          scp -r "${ssh_opts[@]}" ProjetDevOps "$AZURE_VM_USER@$AZURE_VM_HOST:~/"
+
+          image_namespace="${GITHUB_REPOSITORY,,}"
+          image_tag="sha-${GITHUB_SHA}"
+          ssh "${ssh_opts[@]}" "$AZURE_VM_USER@$AZURE_VM_HOST" \
+            "cd ~/ProjetDevOps && GHCR_NAMESPACE='$image_namespace' IMAGE_TAG='$image_tag' docker compose pull && GHCR_NAMESPACE='$image_namespace' IMAGE_TAG='$image_tag' docker compose up -d --no-build --remove-orphans"
